@@ -10,6 +10,18 @@ El bot opera bajo una arquitectura asíncrona que conecta cuatro componentes pri
 3. **TTS Engine:** Generación de audio de alta fidelidad.
 4. **Audio Manager:** Gestión de la salida de audio local y control de archivos temporales.
 
+## 📂 Estructura del Proyecto
+
+```text
+AI-Bot/
+├── src/
+│   └── bot.py          # Lógica principal del sistema
+├── config.json         # Reglas de comportamiento y prompts
+├── .env                # Credenciales y variables sensibles (Excluido)
+├── .gitignore          # Archivos ignorados por Git
+├── requirements.txt    # Dependencias de Python
+└── audios/             # Almacenamiento temporal de voz (Auto-limpieza)
+
 ## Características Técnicas
 
 * **Filtrado Dinámico:** El sistema utiliza expresiones regulares para detectar menciones específicas definidas por el usuario, ignorando el tráfico de chat irrelevante.
@@ -37,7 +49,7 @@ BOT_NAME_SECONDARY=palabra_clave_2
 
 ### Ejecución
 Para iniciar el sistema, ejecute el script principal:
-python bot.py
+python src/bot.py
 
 ## Gestión de QA y Control de Versiones
 Este proyecto sigue prácticas de estandarización para asegurar que la lógica de filtrado y la reproducción de audio no presenten condiciones de carrera (race conditions) durante periodos de alta actividad en el flujo de datos. Se recomienda verificar que la carpeta audios/ tenga permisos de escritura antes de la ejecución.
