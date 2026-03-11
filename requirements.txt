@@ -31,7 +31,6 @@ protobuf3-to-dict==0.1.5
 pydantic==2.12.5
 pydantic_core==2.41.5
 pyee==11.1.0
-pygame-ce==2.5.7
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 python-socks==2.8.1
