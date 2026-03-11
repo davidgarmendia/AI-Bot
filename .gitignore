@@ -1,0 +1,21 @@
+# --- Seguridad y Privacidad ---
+.env
+
+# --- Archivos generados por el Bot ---
+audios/
+*.mp3
+
+# --- Basura de Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- Entornos Virtuales (por si acaso los usas luego) ---
+venv/
+.venv/
+env/
+
+# --- Configuración de Editores ---
+.vscode/
+.idea/
