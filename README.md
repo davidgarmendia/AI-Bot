@@ -46,6 +46,9 @@ Cree un archivo llamado .env en la raíz del proyecto. Este archivo está exclui
 TIKTOK_NICKNAME=id_de_usuario
 BOT_NAME_PRIMARY=palabra_clave_1
 BOT_NAME_SECONDARY=palabra_clave_2
+TWITCH_TOKEN=oauth:tu_token_aqui
+TWITCH_CHANNEL=tu_canal
+BOT_NAME_PRIMARY=NombreDelBot
 
 ### Ejecución
 Para iniciar el sistema, ejecute el script principal:
