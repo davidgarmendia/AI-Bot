@@ -1,63 +1,33 @@
-# AI-Bot: Stream Interaction System
+# AI TTS Chat Bot Companion - V 1.0
 
-Asistente de interacción para transmisiones en vivo. Este sistema integra procesamiento de lenguaje natural mediante modelos de lenguaje de gran escala (LLM) y síntesis de voz (TTS) para generar respuestas automáticas y audibles en tiempo real.
+## Descripcion
+Sistema avanzado de asistencia para streaming multiplataforma. Kimera utiliza Inteligencia Artificial (LLM) para interactuar con audiencias de Twitch, YouTube y TikTok de forma simultanea. El sistema integra procesamiento de lenguaje natural, sintesis de voz asincrona y deteccion automatica de transmisiones en vivo.
 
-## Arquitectura del Sistema
+## Estructura del Proyecto
+El codigo se organiza bajo una arquitectura modular para facilitar el mantenimiento y la escalabilidad:
 
-El bot opera bajo una arquitectura asíncrona que conecta cuatro componentes principales:
-1. **Live Stream API:** Captura de eventos de chat en tiempo real.
-2. **Inference Server (OpenAI API Wrapper):** Procesamiento de texto para la generación de respuestas dinámicas.
-3. **TTS Engine:** Generación de audio de alta fidelidad.
-4. **Audio Manager:** Gestión de la salida de audio local y control de archivos temporales.
+* **src/bot.py**: Orquestador principal que gestiona el ciclo de vida de todos los modulos.
+* **src/modules/config_loader.py**: Centraliza la carga de variables de entorno (.env) y configuraciones JSON.
+* **src/modules/processor.py**: Gestiona la comunicacion con el motor de IA (LM Studio) y aplica filtros de seguridad.
+* **src/modules/tts_engine.py**: Motor de voz basado en Edge-TTS con gestion de colas para evitar solapamiento de audio.
+* **src/modules/twitch_client.py**: Cliente IRC para integracion con el chat de Twitch.
+* **src/modules/youtube_client.py**: Conector dinamico que localiza automaticamente el directo activo del canal.
+* **src/modules/tiktok_client.py**: Cliente de escucha para TikTok con logica de activacion por palabras clave (Triggers).
 
-## 📂 Estructura del Proyecto
+## Requisitos de Entorno
+* Python 3.10+
+* LM Studio (Local LLM Server)
+* FFmpeg (Requerido para el procesamiento de audio en algunos sistemas)
 
-```text
-AI-Bot/
-├── src/
-│   └── bot.py          # Lógica principal del sistema
-├── config.json         # Reglas de comportamiento y prompts
-├── .env                # Credenciales y variables sensibles (Excluido)
-├── .gitignore          # Archivos ignorados por Git
-├── requirements.txt    # Dependencias de Python
-└── audios/             # Almacenamiento temporal de voz (Auto-limpieza)
-
-## Características Técnicas
-
-* **Filtrado Dinámico:** El sistema utiliza expresiones regulares para detectar menciones específicas definidas por el usuario, ignorando el tráfico de chat irrelevante.
-* **Gestión de Archivos por Epoch:** Cada archivo de audio generado recibe un nombre único basado en el timestamp de Unix para prevenir colisiones de escritura.
-* **Ciclo de Limpieza:** Los archivos temporales se eliminan automáticamente del almacenamiento local una vez que la reproducción ha finalizado.
-* **Abstracción de Configuración:** Los parámetros sensibles (nombres de usuario, palabras clave y credenciales) se gestionan exclusivamente mediante variables de entorno local (.env).
-
-## Instalación y Configuración
-
-### Requisitos Previos
-* Python 3.10 o superior.
-* Servidor de inferencia local activo.
-
-### Pasos de Instalación
+## Instalacion
 1. Clonar el repositorio.
-2. Instalar las dependencias necesarias:
-   ```bash
-   pip install -r requirements.txt
+2. Crear un entorno virtual: `python -m venv venv`
+3. Instalar dependencias: `pip install -r requirements.txt`
+4. Configurar el archivo `.env` con las credenciales necesarias.
 
-### Configuración del Archivo .env
-Cree un archivo llamado .env en la raíz del proyecto. Este archivo está excluido del control de versiones por seguridad. Debe contener los siguientes parámetros:
-TIKTOK_NICKNAME=id_de_usuario
-BOT_NAME_PRIMARY=palabra_clave_1
-BOT_NAME_SECONDARY=palabra_clave_2
-TWITCH_TOKEN=oauth:tu_token_aqui
-TWITCH_CHANNEL=tu_canal
-BOT_NAME_PRIMARY=NombreDelBot
-
-### Ejecución
-Para iniciar el sistema, ejecute el script principal:
+## Ejecucion
+Para iniciar todos los servicios simultaneamente, ejecute:
 python src/bot.py
 
-## Gestión de QA y Control de Versiones
-Este proyecto sigue prácticas de estandarización para asegurar que la lógica de filtrado y la reproducción de audio no presenten condiciones de carrera (race conditions) durante periodos de alta actividad en el flujo de datos. Se recomienda verificar que la carpeta audios/ tenga permisos de escritura antes de la ejecución.
-
-### Detalles técnicos corregidos:
-* **Punto 3:** Incluida la configuración de variables de entorno.
-* **Punto 4:** Incluido el comando de ejecución.
-* **QA Note:** Se añadió la nota sobre permisos de escritura en la carpeta de audios, que es un error común en entornos de pruebas.
+## Notas de QA
+El sistema implementa una arquitectura asincrona mediante asyncio, permitiendo que cada plataforma opere de forma independiente sin bloquear el flujo principal de procesamiento de IA o la salida de voz.
