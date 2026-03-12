@@ -1,150 +1,93 @@
 import asyncio
+import sys
 import os
-import re
-import time
-import json
-import shutil
-from pathlib import Path
-from dotenv import load_dotenv
-from TikTokLive import TikTokLiveClient
-from TikTokLive.events import CommentEvent
-from openai import OpenAI
-import edge_tts
-from playsound import playsound
 
 # --- CONFIGURACIÓN DE RUTAS ---
-BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(os.path.join(BASE_DIR, ".env"))
+# Añadimos la carpeta actual al PATH para que Python reconozca la carpeta 'modules'
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# --- CARGA DE REGLAS ---
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
-try:
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        config_data = json.load(f)
-        SYSTEM_PROMPT_TEMPLATE = " ".join(config_data["system_rules"])
-except:
-    SYSTEM_PROMPT_TEMPLATE = "Responde brevemente y sin emojis."
-
-# --- VARIABLES DE ENTORNO ---
-T_NICK = os.getenv("TIKTOK_NICKNAME")
-TW_TOKEN = os.getenv("TWITCH_TOKEN")
-TW_CHANNEL = os.getenv("TWITCH_CHANNEL", "").lower()
-TW_NICK = os.getenv("BOT_NAME_PRIMARY", "Kim").lower()
-KEYWORD1 = TW_NICK
-KEYWORD2 = os.getenv("BOT_NAME_SECONDARY", "Kimera").lower()
-AUDIO_DIR = os.path.join(BASE_DIR, "audios")
-
-# --- MOTORES ---
-client_ai = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
-audio_queue = asyncio.Queue(maxsize=10)
-
-def limpiar_audios():
-    if os.path.exists(AUDIO_DIR):
-        shutil.rmtree(AUDIO_DIR)
-    os.makedirs(AUDIO_DIR)
-
-async def worker_audio():
-    print("🛠️  Sistema de audio Kimera activo...")
-    while True:
-        texto = await audio_queue.get()
-        filename = os.path.join(AUDIO_DIR, f"v_{int(time.time())}.mp3")
-        try:
-            # LINEA 52: ASEGÚRATE QUE ESTÉ COMPLETA
-            communicate = edge_tts.Communicate(texto, "es-MX-DaliaNeural")
-            await communicate.save(filename)
-            await asyncio.to_thread(playsound, filename)
-            if os.path.exists(filename): os.remove(filename)
-        except Exception as e:
-            print(f"🔊 Error Audio: {e}")
-        audio_queue.task_done()
-
-async def procesar_ia(usuario, mensaje):
-    if audio_queue.full(): return
-    
-    # LISTA NEGRA DE PALABRAS
-    blacklist = ["muerte", "morir", "asesinato", "matar", "asesinar", "muerto"]
-    
-    try:
-        prompt = SYSTEM_PROMPT_TEMPLATE.format(name=KEYWORD1.capitalize())
-        res = client_ai.chat.completions.create(
-            model="meta-llama-3-8b-instruct",
-            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": mensaje}],
-            timeout=10
-        )
-        
-        respuesta = res.choices[0].message.content
-        
-        # 1. FILTRO DE PALABRAS (Censura con ***)
-        for palabra in blacklist:
-            regex = re.compile(re.escape(palabra), re.IGNORECASE)
-            respuesta = regex.sub("****", respuesta)
-
-        # 2. FILTRO DE CARACTERES (Permite acentos y Ñ, quita emojis)
-        # Este nuevo regex permite letras (a-z, A-Z), números, puntuación básica 
-        # y caracteres especiales del español (áéíóúüñÁÉÍÓÚÜÑ)
-        respuesta_limpia = re.sub(r'[^a-zA-Z0-9\s.,!?¡¿áéíóúüñÁÉÍÓÚÜÑ:;()-]', '', respuesta)
-        
-        print(f"✨ Kim dice: {respuesta_limpia}")
-        await audio_queue.put(respuesta_limpia)
-        
-    except Exception as e:
-        print(f"❌ Error IA: {e}")
-
-async def conectar_twitch_irc():
-    server = 'irc.chat.twitch.tv'
-    port = 6667
-    while True:
-        try:
-            reader, writer = await asyncio.open_connection(server, port)
-            writer.write(f"PASS {TW_TOKEN}\r\n".encode())
-            writer.write(f"NICK {TW_NICK}\r\n".encode())
-            writer.write(f"JOIN #{TW_CHANNEL}\r\n".encode())
-            await writer.drain()
-            print(f"💜 Twitch: Conectado a #{TW_CHANNEL}")
-            while True:
-                line = await reader.readline()
-                if not line: break
-                msg = line.decode().strip()
-                if msg.startswith("PING"):
-                    writer.write("PONG :tmi.twitch.tv\r\n".encode())
-                    await writer.drain()
-                    continue
-                if "PRIVMSG" in msg:
-                    partes = msg.split(":", 2)
-                    if len(partes) < 3: continue
-                    usuario = partes[1].split("!")[0]
-                    if usuario.lower() == TW_NICK.lower(): continue
-                    contenido = partes[2]
-                    if re.search(rf"\b({KEYWORD1}|{KEYWORD2})\b", contenido.lower()):
-                        await procesar_ia(usuario, contenido)
-        except Exception as e:
-            print(f"⚠️ Error Twitch, reintentando...")
-            await asyncio.sleep(5)
-
-tt_client = TikTokLiveClient(unique_id=T_NICK)
-@tt_client.on(CommentEvent)
-async def on_tt_comment(event: CommentEvent):
-    if re.search(rf"\b({KEYWORD1}|{KEYWORD2})\b", event.comment.lower()):
-        await procesar_ia(event.user.nickname, event.comment)
-
-async def mantener_tiktok():
-    while True:
-        try:
-            await tt_client.start()
-        except:
-            await asyncio.sleep(20)
+# --- IMPORTACIÓN DE MÓDULOS PROPIOS ---
+# Cada módulo tiene una responsabilidad única (Principio de Responsabilidad Única)
+from modules.config_loader import ConfigLoader    # Cimiento: Carga de archivos y .env
+from modules.processor import KimeraProcessor      # Cerebro: IA y Filtros de seguridad
+from modules.tts_engine import TTSEngine           # Voz: Generación de audio y colas
+from modules.twitch_client import TwitchManager    # Oído 1: Conector Twitch (Lectura Total)
+from modules.youtube_client import YouTubeManager  # Oído 2: Conector YouTube (Lectura Total)
+from modules.tiktok_client import TikTokManager    # Oído 3: Conector TikTok (Filtro Keyword)
 
 async def main():
-    limpiar_audios()
-    stop_event = asyncio.Event()
-    asyncio.create_task(worker_audio())
-    asyncio.create_task(conectar_twitch_irc())
-    asyncio.create_task(mantener_tiktok())
-    print(f"🚀 SISTEMA ONLINE (Kim/Kimera)")
-    await stop_event.wait()
+    print("\n" + "="*50)
+    print("      🤖 SISTEMA OPERATIVO KIMERA V2.0")
+    print("           (Arquitectura Modular)")
+    print("="*50 + "\n")
+
+    # 1. INICIALIZACIÓN DE CONFIGURACIÓN
+    # Cargamos tokens y reglas antes de que cualquier otro módulo arranque.
+    try:
+        loader = ConfigLoader()
+        print("✅ ConfigLoader: Archivos JSON y .env validados.")
+    except Exception as e:
+        print(f"❌ Error crítico al cargar configuración: {e}")
+        return
+
+    # 2. INICIALIZACIÓN DE MOTORES CORE
+    # El Processor (IA) y el TTS (Voz) son compartidos por todas las plataformas.
+    processor = KimeraProcessor(loader)
+    tts = TTSEngine(loader)
+    print("✅ Motores Core (IA y TTS) en línea.")
+
+    # 3. INSTANCIACIÓN DE CONECTORES (SENTIDOS)
+    # Creamos los clientes para cada plataforma inyectando los motores core.
+    twitch_bot = TwitchManager(loader, processor, tts)
+    youtube_bot = YouTubeManager(loader, processor, tts)
+    tiktok_bot = TikTokManager(loader, processor, tts)
+
+    # 4. ARRANQUE DE TAREAS ASÍNCRONAS (Paralelismo)
+    # Usamos create_task para que todos los módulos corran al mismo tiempo sin bloquearse.
+    print("\n📡 Iniciando conectores de plataforma...")
+    
+    # Motor de voz (Siempre activo para procesar la cola de audios)
+    asyncio.create_task(tts.worker())
+    
+    # Clientes de chat
+    asyncio.create_task(twitch_bot.start())
+    asyncio.create_task(youtube_bot.start())
+    asyncio.create_task(tiktok_bot.start())
+
+    # 5. PRUEBA DE INTEGRACIÓN (Smoke Test)
+    # Un saludo inicial confirma que el flujo Config -> IA -> TTS funciona.
+    streamer_name = loader.get_env("TIKTOK_NICKNAME", "Creador")
+    welcome_msg = f"¡Sistema Kimera iniciado! Hola {streamer_name}, estoy lista para el stream."
+    
+    print(f"🎙️ Kimera: Generando saludo inicial...")
+    await tts.agregar_a_cola(welcome_msg)
+
+    print("\n" + "-"*50)
+    print("🚀 KIMERA ESTÁ ESCUCHANDO EN TWITCH, YOUTUBE Y TIKTOK")
+    print("Presiona Ctrl+C para apagar el sistema.")
+    print("-"*50 + "\n")
+
+    # 6. MANTENIMIENTO DEL BUCLE PRINCIPAL
+    # Mantenemos el bot vivo indefinidamente.
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        print("\n👋 Tareas canceladas por el sistema.")
+    except KeyboardInterrupt:
+        print("\n👋 Apagado manual detectado. Cerrando procesos de Kimera...")
+    finally:
+        # Aquí podrías añadir lógica de cierre de archivos o desconexión de APIs
+        print("🔒 Sistema fuera de línea.")
 
 if __name__ == "__main__":
+    # Ajuste de política de bucle para evitar errores de cierre en Windows
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     try:
+        # Iniciamos la ejecución del orquestador
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n👋 Bot apagado.")
+        # Captura el Ctrl+C en la terminal para un cierre limpio
+        pass
