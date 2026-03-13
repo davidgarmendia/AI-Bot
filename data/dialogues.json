@@ -1,3 +1,8 @@
 {
-  "pools": {}
+    "saludos": {
+        "inicio_sistema": "¡Sistema iniciado! Hola {streamer}."
+    },
+    "errores": {
+        "ia_caida": "¡Uy! Mis orejas se hicieron nudo, ¿puedes repetir?"
+    }
 }

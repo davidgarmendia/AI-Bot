@@ -9,49 +9,66 @@ class ConfigLoader:
         self.base_dir = Path(__file__).resolve().parent.parent.parent
         load_dotenv(os.path.join(self.base_dir, ".env"))
 
-        # Rutas centralizadas
+        # --- DICCIONARIO DE RUTAS CENTRALIZADO ---
+        # Si alguna vez mueves un archivo, solo lo cambias aquí.
         self.paths = {
-            "config": os.path.join(self.base_dir, "config", "config.json"),
+            "settings": os.path.join(self.base_dir, "config", "settings.json"),
+            "personality": os.path.join(self.base_dir, "config", "personality.json"),
             "dialogues": os.path.join(self.base_dir, "data", "dialogues.json"),
             "restricted": os.path.join(self.base_dir, "data", "restricted_terminology.json")
         }
 
-        self.config = self._read_json(self.paths["config"], {})
-        self.dialogues = self._read_json(self.paths["dialogues"], {"pools": {}})
-        self.restricted_terms = self._read_json(self.paths["restricted"], {"blacklist": []}).get("blacklist", [])
+        # Carga inicial de datos
+        self.settings = self._read_json(self.paths["settings"], {})
+        self.personality = self._read_json(self.paths["personality"], {"rules": []})
+        self.dialogues = self._read_json(self.paths["dialogues"], {"saludos": {}})
         
-        print("✅ ConfigLoader: Recursos de config/ y data/ cargados.")
+        # Cargamos la blacklist de términos restringidos
+        restricted_data = self._read_json(self.paths["restricted"], {"blacklist": []})
+        self.restricted_terms = restricted_data.get("blacklist", [])
+        
+        print("✅ ConfigLoader V2: Recursos de config/ y data/ vinculados correctamente.")
 
     def _read_json(self, file_path, default):
+        """Lector genérico y seguro para cualquier archivo JSON."""
         if not os.path.exists(file_path):
-            print(f"⚠️ Aviso: {file_path} no encontrado.")
+            print(f"⚠️ Aviso: No se encontró {file_path}. Usando valores por defecto.")
             return default
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            print(f"❌ Error en JSON {file_path}: {e}")
+            print(f"❌ Error crítico procesando JSON en {file_path}: {e}")
             return default
 
     def get_env(self, key, default=None):
+        """Obtiene variables del archivo .env"""
         return os.getenv(key, default)
-    
-    # El decorador @property permite llamar a este método como si fuera un atributo (self.system_prompt)
-    # Esto centraliza la construcción de la personalidad de Kimera.
+
+    def get_dialogue(self, categoria, clave):
+        """Obtiene frases predefinidas desde data/dialogues.json"""
+        return self.dialogues.get(categoria, {}).get(clave, "¡Sistema en línea!")
+
+    def get_phonetic_replacements(self):
+        """Obtiene las reglas de pronunciación guardadas en config/settings.json"""
+        return self.settings.get("phonetic_replacements", {})
+
     @property
     def system_prompt(self):
         """
         Ensamblador de Personalidad:
-        Combina las reglas técnicas (system_rules) con las reglas de rol (personality_rules).
-        Sirve para que el Processor.py no tenga que saber cómo se estructuran las reglas en el JSON;
-        simplemente solicita el prompt final listo para ser enviado a la IA.
+        Une todas las reglas de config/personality.json en un bloque sólido para la IA.
         """
-        # Extraemos las listas del config.json. Usamos un fallback [] por seguridad de QA.
-        rules = self.config.get("system_rules", [])
-        personality = self.config.get("personality_rules", [])
+        # Intentamos obtener 'rules' (el nuevo estándar) o las llaves viejas por si acaso
+        rules = self.personality.get("rules", [])
+        if not rules:
+            # Soporte de transición por si aún usas los nombres viejos en el JSON
+            rules = self.personality.get("system_rules", []) + self.personality.get("personality_rules", [])
         
-        # Unimos ambas listas en un bloque sólido de texto para el System Message de la IA.
-        full_prompt = " ".join(rules + personality)
+        full_prompt = " ".join(rules)
         
-        # Fallback crítico: Si no hay reglas definidas, el bot no se queda mudo ni sin identidad.
-        return full_prompt if full_prompt else "Eres Kimera, una VTuber quimera creada por Klumsy Healer."
+        # Fallback de seguridad si el archivo está vacío
+        if not full_prompt:
+            return "Eres Kim, una asistente carismática creada por Klumsy Healer."
+        
+        return full_prompt

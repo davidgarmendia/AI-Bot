@@ -1,15 +1,13 @@
 import pytchat
 import asyncio
+import httpx  # Necesitaremos esta librería para un scraping más robusto
+import re
 from youtubesearchpython import __future__ as LiveStream
 
 class YouTubeManager:
     def __init__(self, loader, processor, tts):
-        """
-        Constructor del cliente de YouTube.
-        Inyecta el loader para config, el processor para la IA y el tts para la voz.
-        """
         self.loader = loader
-        # Puedes usar el ID (UC...) o el Handle (@KlumsyHealer) en el .env
+        # Recomendación: Usa el ID que empieza por UC... en tu .env
         self.channel_identifier = self.loader.get_env("YOUTUBE_CHANNEL_ID")
         self.processor = processor
         self.tts = tts
@@ -18,71 +16,83 @@ class YouTubeManager:
 
     async def get_live_id(self):
         """
-        QA: Busca dinamicamente el ID del video que esta en directo.
-        Esto evita tener que editar el .env en cada stream.
+        QA Mejorado: Intenta múltiples métodos para encontrar el ID del directo.
         """
+        # Método 1: Intentar con la URL /live y Regex (Más rápido y confiable)
         try:
-            # Construimos la URL de 'live' del canal que siempre redirige al directo actual
+            url = f"https://www.youtube.com/{self.channel_identifier}/live"
+            async with httpx.AsyncClient(timeout=10) as client:
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.31 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.31"}
+                response = await client.get(url, headers=headers, follow_redirects=True)
+                
+                # Buscamos el ID del video en el código fuente de la página
+                match = re.search(r'videoIds":\["([^"]+)"\]', response.text)
+                if match:
+                    return match.group(1)
+                
+                # Segundo intento por si el formato cambia
+                match = re.search(r'canonical" href="https://www.youtube.com/watch\?v=([^"]+)"', response.text)
+                if match:
+                    return match.group(1)
+        except Exception as e:
+            print(f"⚠️ YouTube Regex Falló: {e}")
+
+        # Método 2: Fallback a LiveStream (Tu método original)
+        try:
             target_url = f"https://www.youtube.com/{self.channel_identifier}/live"
-            
-            # Buscamos la informacion del video en esa URL
             video = await LiveStream.Video.getInfo(target_url)
-            
             if video and 'id' in video:
                 return video['id']
-        except Exception as e:
-            # Si no hay directo, la libreria lanzara una excepcion o no encontrara el ID
+        except:
             return None
+            
         return None
 
     async def start(self):
-        """
-        Orquestador del cliente de YouTube. 
-        Maneja la reconexion automatica si no encuentra un stream al inicio.
-        """
         print(f"📡 YouTube: Iniciando monitoreo para {self.channel_identifier}")
 
         while self.is_running:
+            # Intentamos obtener el ID
             video_id = await self.get_live_id()
 
             if not video_id:
-                # Si no hay directo, esperamos 30 segundos antes de volver a preguntar
-                # Esto ahorra recursos y evita bloqueos de IP por parte de YouTube
                 print(f"☁️ YouTube: No se detecto stream activo en {self.channel_identifier}. Reintentando en 30s...")
                 await asyncio.sleep(30)
                 continue
 
             try:
-                # Creamos la conexion al chat de YouTube
+                # La librería pytchat es síncrona, pero la envolvemos para no bloquear
                 self.chat = pytchat.create(video_id=video_id)
                 print(f"✅ YouTube: ¡Conectado al chat! (Video ID: {video_id})")
 
-                # Bucle de escucha mientras el chat este vivo
                 while self.chat.is_alive():
-                    # get().sync_items() obtiene los mensajes nuevos
-                    for c in self.chat.get().sync_items():
+                    # Usamos un bucle no bloqueante para procesar mensajes
+                    data = self.chat.get()
+                    for c in data.sync_items():
                         usuario = c.author.name
                         mensaje = c.message
                         
                         print(f"💬 [YouTube] {usuario}: {mensaje}")
 
-                        # Flujo Core: Procesar con IA y enviar a Cola de Voz
-                        try:
-                            respuesta = await self.processor.generate_response(usuario, mensaje)
-                            if respuesta:
-                                await self.tts.agregar_a_cola(respuesta)
-                        except Exception as ai_err:
-                            print(f"❌ Error en IA (YouTube): {ai_err}")
+                        # Lanzamos la respuesta como una tarea para no detener la escucha
+                        asyncio.create_task(self._process_message(usuario, mensaje))
 
-                    # Espera corta para no saturar el hilo
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1) # Respiro para el procesador
 
             except Exception as e:
-                print(f"❌ Error en conexion de chat YouTube: {e}")
-                await asyncio.sleep(10) # Espera antes de intentar reconectar todo
+                print(f"❌ Error en conexión de chat YouTube: {e}")
+                await asyncio.sleep(10)
+
+    async def _process_message(self, usuario, mensaje):
+        """Tarea separada para procesar mensajes sin bloquear el chat."""
+        try:
+            respuesta = await self.processor.generate_response(usuario, mensaje)
+            if respuesta:
+                await self.tts.agregar_a_cola(respuesta)
+        except Exception as ai_err:
+            print(f"❌ Error en IA (YouTube): {ai_err}")
 
     def stop(self):
-        """Metodo de apagado seguro."""
         self.is_running = False
         if self.chat:
             self.chat.terminate()

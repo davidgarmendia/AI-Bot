@@ -10,14 +10,13 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from modules.config_loader import ConfigLoader
 from modules.processor import KimeraProcessor
 from modules.tts_engine import TTSEngine
-from modules.cli_parser import parse_arguments  # Nuestro nuevo gestor de comandos
+from modules.cli_parser import parse_arguments 
 from modules.twitch_client import TwitchManager
 from modules.youtube_client import YouTubeManager
 from modules.tiktok_client import TikTokManager
 
 async def main():
     # 0. CAPTURA DE ARGUMENTOS
-    # Detecta qué escribiste en la terminal (--tiktok, --youtube, etc.)
     args = parse_arguments()
 
     # 1. INICIALIZACIÓN DE CONFIGURACIÓN
@@ -38,7 +37,6 @@ async def main():
     print("="*50 + "\n")
 
     # 2. INICIALIZACIÓN DE MOTORES CORE
-    # La IA y la Voz se cargan siempre porque son el corazón del bot
     processor = KimeraProcessor(loader)
     tts = TTSEngine(loader)
     print("✅ Motores Core (IA y TTS) en línea.")
@@ -46,12 +44,10 @@ async def main():
     # 3. INSTANCIACIÓN Y ARRANQUE DINÁMICO
     print(f"📡 {bot_identity} iniciando conectores seleccionados...")
     
-    # El motor de voz siempre arranca para procesar la cola
     asyncio.create_task(tts.worker())
 
     active_platforms = []
 
-    # Lógica de encendido selectivo basada en los comandos de la terminal
     if args.twitch or args.all:
         try:
             twitch_bot = TwitchManager(loader, processor, tts)
@@ -76,8 +72,11 @@ async def main():
         except Exception as e:
             print(f"⚠️ Error al conectar con TikTok: {e}")
 
-    # 4. SALUDO INICIAL (Smoke Test)
-    welcome_msg = f"¡Sistema iniciado! Hola {streamer_identity}, estoy lista para el stream."
+    # 4. SALUDO INICIAL (Cargado dinámicamente desde dialogues.json)
+    # Buscamos la plantilla en el loader y formateamos con el nombre del streamer
+    plantilla_saludo = loader.get_dialogue("saludos", "inicio_sistema")
+    welcome_msg = plantilla_saludo.replace("{streamer}", streamer_identity)
+    
     print(f"🎙️ {bot_identity}: Generando saludo inicial...")
     await tts.agregar_a_cola(welcome_msg)
 
@@ -98,7 +97,6 @@ async def main():
         print("🔒 Sistema fuera de línea.")
 
 if __name__ == "__main__":
-    # Ajustes para Windows y limpieza de consola
     if sys.platform == 'win32':
         import warnings
         warnings.filterwarnings("ignore", category=DeprecationWarning)
