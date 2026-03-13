@@ -18,7 +18,7 @@ class TTSEngine:
         self.queue = asyncio.Queue()
         
         # Diccionario fonético desde config.json
-        self.phonetic_dict = self.loader.config.get("phonetic_replacements", {})
+        self.phonetic_dict = self.loader.get_phonetic_replacements()
         
         # Limpiar carpeta de audios al iniciar
         self._limpiar_audios()
