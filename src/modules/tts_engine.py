@@ -30,21 +30,15 @@ class TTSEngine:
         if texto and len(texto.strip()) > 0:
             await self.queue.put(texto)
 
-    async def worker(self):
-        """Procesa la cola de mensajes y los envía a AllTalk."""
+async def worker(self):
         print(f"🔊 AllTalk Engine activo. Voz actual: {self.voice_name}")
         while True:
-            # Esperamos a que llegue un nuevo mensaje
             texto = await self.queue.get()
             
-            # Nombre base único (sin extensión para la API)
             temp_name_simple = f"kim_voice_{int(time.time())}"
-            # Ruta completa con extensión para que playsound la encuentre
             full_path = os.path.join(self.audio_dir, f"{temp_name_simple}.wav")
             
             try:
-                # El Diccionario (Data Payload)
-                # IMPORTANTE: output_file_name va sin '.wav' porque AllTalk lo agrega solo
                 data = {
                     "text_input": str(texto),
                     "voice_speaker": self.voice_name,
@@ -54,7 +48,6 @@ class TTSEngine:
                     "speed": "1.0"
                 }
 
-                # Realizamos la petición POST a AllTalk
                 response = await asyncio.to_thread(
                     requests.post, 
                     self.alltalk_url, 
@@ -63,15 +56,19 @@ class TTSEngine:
                 )
 
                 if response.status_code == 200:
-                    print(f"🎙️ Kim dice: {texto}")
-                    # Reproducimos el audio generado
-                    # Nota: AllTalk guarda por defecto en su propia carpeta 'outputs'
-                    # pero si configuraste AllTalk para usar tu carpeta temp, lo encontrará aquí:
-                    await asyncio.to_thread(playsound, full_path)
+                    # ESPERA DE SEGURIDAD: Damos 0.5 seg al disco para que "suelte" el archivo
+                    await asyncio.sleep(0.5)
+                    
+                    if os.path.exists(full_path):
+                        print(f"🎙️ Kim dice: {texto}")
+                        await asyncio.to_thread(playsound, full_path)
+                    else:
+                        print(f"⚠️ El archivo se generó pero no se encuentra en: {full_path}")
+                        print("Revisa si AllTalk lo está guardando en su propia carpeta 'outputs'.")
                 else:
-                    print(f"❌ Error API AllTalk: {response.status_code} - {response.text}")
+                    print(f"❌ Error API AllTalk: {response.status_code}")
 
-                # Intentamos limpiar el archivo generado para no acumular basura
+                # Limpieza
                 if os.path.exists(full_path):
                     os.remove(full_path)
                     
@@ -79,5 +76,4 @@ class TTSEngine:
                 print(f"❌ Error en el proceso de TTS: {e}")
             
             finally:
-                # Marcamos la tarea como terminada en la cola
                 self.queue.task_done()
