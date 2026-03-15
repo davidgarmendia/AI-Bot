@@ -1,90 +1,49 @@
 import re
+import asyncio
 from openai import OpenAI
 
 class KimeraProcessor:
     def __init__(self, loader):
-        """
-        Recibe el objeto 'loader' que ya tiene la configuración cargada.
-        """
         self.loader = loader
-        # Configuramos el cliente de la IA (LM Studio)
-        self.client_ai = OpenAI(
-            base_url="http://localhost:1234/v1", 
-            api_key="lm-studio"
-        )
-    async def generate_response(self, usuario, mensaje):
-        # 1. Obtener respuesta de la IA (LM Studio / OpenAI)
-        respuesta = await self.llm.ask(usuario, mensaje) 
+        self.ia_url = "http://localhost:1234/v1"
+        self.client_ai = OpenAI(base_url=self.ia_url, api_key="lm-studio")
 
-        # 2. Aplicar "Filtro de Humanización"
-        respuesta = self.humanizar_texto(respuesta)
-        
-        return respuesta
+        self.system_prompt = "Eres Kim, una asistente de stream divertida, breve y sarcástica. Responde en español, máximo dos frases."
+        self.restricted_terms = [] 
 
     def humanizar_texto(self, texto):
-        # Reemplazos rápidos para que suene mejor
-        reemplazos = {
-            " XD": " equis dé",
-            " LOL": " lool",
-            " :)": " ¡jeje!",
-            "www.": " u ve doble, u ve doble, u ve doble punto ",
-            " ID": " i dé"
-        }
-        
+        reemplazos = {" XD": " equis dé", " LOL": " lool", " :)": " ¡jeje!", "www.": " u ve doble punto ", " ID": " i dé"}
         for original, nuevo in reemplazos.items():
             texto = texto.replace(original, nuevo)
-            
-        # Forzar una pausa tras el saludo inicial
-        if "¡Hola!" in texto:
-            texto = texto.replace("¡Hola!", "¡Hola!... ")
-            
         return texto
-        
-        # Cargamos el prompt del sistema y los términos restringidos
-        self.system_prompt = self.loader.system_prompt
-        self.restricted_terms = self.loader.restricted_terms
 
     def _aplicar_filtros(self, texto):
-        """
-        QA Check: Revisa si el mensaje contiene palabras prohibidas 
-        antes de enviarlo a la IA o al TTS.
-        """
+        if not self.restricted_terms: return texto
         for palabra in self.restricted_terms:
-            # Usamos regex para encontrar palabras completas e ignorar mayúsculas
             pattern = re.compile(rf'\b{re.escape(palabra)}\b', re.IGNORECASE)
             texto = pattern.sub("****", texto)
         return texto
 
     async def generate_response(self, usuario, mensaje):
-        """
-        Encuentro entre el mensaje del usuario y la lógica de la IA.
-        """
-        # 1. Filtramos el mensaje de entrada (Seguridad)
         mensaje_limpio = self._aplicar_filtros(mensaje)
-        
         try:
-            # 2. Petición a LM Studio
-            res = self.client_ai.chat.completions.create(
+            loop = asyncio.get_event_loop()
+            res = await loop.run_in_executor(None, lambda: self.client_ai.chat.completions.create(
                 model="meta-llama-3-8b-instruct",
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     {"role": "user", "content": f"{usuario} dice: {mensaje_limpio}"}
                 ],
-                timeout=15
-            )
+                temperature=0.7,
+                max_tokens=80,
+                stop=["\n", f"{usuario}:", "Usuario:"]
+            ))
             
-            respuesta_ia = res.choices[0].message.content
+            respuesta_ia = res.choices[0].message.content.strip()
+            respuesta_final = self.humanizar_texto(self._aplicar_filtros(respuesta_ia))
             
-            # 3. Filtramos la respuesta de la IA (Doble Seguridad)
-            respuesta_final = self._aplicar_filtros(respuesta_ia)
-            
-            # 4. Manejo de etiquetas especiales (como el tag de [PREGUNTA])
-            if "[PREGUNTA]" in respuesta_final:
-                print(f"🤔 Kim tiene una duda sobre lo que dijo {usuario}")
-                # Aquí podrías disparar lógica adicional en el futuro
-            
+            print(f"🤖 [Kim Responde]: {respuesta_final}")
             return respuesta_final
-
         except Exception as e:
-            print(f"❌ Error en el procesador de IA: {e}")
-            return "¡Uy! Mis orejas de quimera se hicieron nudo, ¿puedes repetir eso?"
+            print(f"❌ Error en KimeraProcessor: {e}")
+            return "Mis circuitos se cruzaron, ¿qué decías?"
