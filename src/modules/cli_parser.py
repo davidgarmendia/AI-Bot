@@ -11,7 +11,7 @@ def parse_arguments():
     parser.add_argument("--youtube", action="store_true", help="Activar YouTube")
     parser.add_argument("--tiktok", action="store_true", help="Activar TikTok")
     parser.add_argument("--all", action="store_true", help="Activar todas las plataformas")
-    
+    parser.add_argument("--slack", action="store_true", help="Ejecutar el bot en Slack")
     # Flag de modo debug (opcional para el futuro)
     parser.add_argument("--debug", action="store_true", help="Modo desarrollador")
 

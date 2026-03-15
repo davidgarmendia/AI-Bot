@@ -1,68 +1,73 @@
 import asyncio
 import os
 import time
-import re
-import shutil
-import edge_tts
+import requests
 from playsound import playsound
 from pathlib import Path
 
 class TTSEngine:
     def __init__(self, loader):
         self.loader = loader
-        # Ruta de audios temporales
         self.base_dir = Path(__file__).resolve().parent.parent.parent
         self.audio_dir = os.path.join(self.base_dir, "temp_audios")
-        
-        # Cola de mensajes para evitar saturación
         self.queue = asyncio.Queue()
         
-        # Diccionario fonético desde config.json
-        self.phonetic_dict = self.loader.get_phonetic_replacements()
+        # --- CONFIGURACIÓN DE ALLTALK ---
+        self.alltalk_url = "http://127.0.0.1:7851/api/tts-generate"
+        self.voice_name = "female_03.wav" 
+        # --------------------------------
         
-        # Limpiar carpeta de audios al iniciar
         self._limpiar_audios()
 
     def _limpiar_audios(self):
-        """QA: Borra audios viejos para no llenar el disco."""
-        if os.path.exists(self.audio_dir):
-            shutil.rmtree(self.audio_dir)
-        os.makedirs(self.audio_dir)
-
-    def _aplicar_fonetica(self, texto):
-        """Aplica los reemplazos de pronunciación (ej: Klumsy -> Clamsi)."""
-        for original, fonetico in self.phonetic_dict.items():
-            pattern = re.compile(re.escape(original), re.IGNORECASE)
-            texto = pattern.sub(fonetico, texto)
-        return texto
+        if not os.path.exists(self.audio_dir):
+            os.makedirs(self.audio_dir)
 
     async def agregar_a_cola(self, texto):
-        """Recibe texto del procesador y lo mete a la fila."""
-        texto_fonetico = self._aplicar_fonetica(texto)
-        await self.queue.put(texto_fonetico)
+        if texto and len(texto.strip()) > 0:
+            await self.queue.put(texto)
 
     async def worker(self):
-        """El motor que siempre está escuchando la cola para hablar."""
-        print("🔊 TTS Engine: Trabajador de voz activo.")
+        print(f"🔊 AllTalk Engine activo. Voz actual: {self.voice_name}")
         while True:
-            # Espera a que haya algo en la cola
             texto = await self.queue.get()
             
-            filename = os.path.join(self.audio_dir, f"voice_{int(time.time())}.mp3")
+            # Solo el nombre del archivo, sin rutas raras de Windows
+            temp_filename = f"kim_voice_{int(time.time())}.wav"
+            full_path = os.path.join(self.audio_dir, temp_filename)
             
             try:
-                # 1. Generar el audio con Edge TTS (Voz de Dalia)
-                communicate = edge_tts.Communicate(texto, "es-MX-DaliaNeural")
-                await communicate.save(filename)
-                
-                # 2. Reproducir el audio (vía hilo para no bloquear el bot)
-                await asyncio.to_thread(playsound, filename)
-                
-                # 3. Limpieza de archivo usado
-                if os.path.exists(filename):
-                    os.remove(filename)
+                # Diccionario (Data Payload) optimizado
+                data = {
+                    "text_input": str(texto),
+                    "voice_speaker": self.voice_name,
+                    "language": "es",
+                    "output_file_name": temp_filename, # Solo el nombre
+                    "use_cache": "true",
+                    "speed": "1.0"
+                }
+
+                # Enviamos la petición
+                response = await asyncio.to_thread(
+                    requests.post, 
+                    self.alltalk_url, 
+                    data=data, 
+                    timeout=20 # Evitamos que se quede colgado
+                )
+
+                if response.status_code == 200:
+                    print(f"🎙️ Reproduciendo: {texto[:30]}...")
+                    # Buscamos el archivo donde AllTalk suele guardarlos si no usa la ruta completa
+                    # Si AllTalk no guarda en tu carpeta temp_audios, revisa su carpeta 'outputs'
+                    await asyncio.to_thread(playsound, full_path)
+                else:
+                    print(f"❌ Error API AllTalk: {response.status_code} - {response.text}")
+
+                if os.path.exists(full_path):
+                    os.remove(full_path)
                     
             except Exception as e:
-                print(f"❌ Error en TTS Worker: {e}")
+                print(f"❌ Error en TTS: {e}")
             
-            self.queue.task_done()
+            finally:
+                self.queue.task_done()
