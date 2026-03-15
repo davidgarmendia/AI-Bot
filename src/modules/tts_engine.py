@@ -8,7 +8,7 @@ from pathlib import Path
 class TTSEngine:
     def __init__(self, loader):
         self.loader = loader
-        # Definimos la ruta base del proyecto
+        # Ruta base
         self.base_dir = Path(__file__).resolve().parent.parent.parent
         self.audio_dir = os.path.join(self.base_dir, "temp_audios")
         self.queue = asyncio.Queue()
@@ -21,21 +21,24 @@ class TTSEngine:
         self._limpiar_audios()
 
     def _limpiar_audios(self):
-        """Crea la carpeta de audios temporales si no existe."""
+        """Crea la carpeta si no existe."""
         if not os.path.exists(self.audio_dir):
             os.makedirs(self.audio_dir)
 
     async def agregar_a_cola(self, texto):
-        """Añade texto a la fila de espera para ser hablado."""
+        """Añade texto a la cola."""
         if texto and len(texto.strip()) > 0:
             await self.queue.put(texto)
 
-async def worker(self):
+    async def worker(self):
+        """ESTA ES LA FUNCIÓN QUE FALTABA O ESTABA MAL IDENTADA"""
         print(f"🔊 AllTalk Engine activo. Voz actual: {self.voice_name}")
         while True:
             texto = await self.queue.get()
             
+            # Nombre sin extensión para la API
             temp_name_simple = f"kim_voice_{int(time.time())}"
+            # Ruta con extensión para playsound
             full_path = os.path.join(self.audio_dir, f"{temp_name_simple}.wav")
             
             try:
@@ -48,6 +51,7 @@ async def worker(self):
                     "speed": "1.0"
                 }
 
+                # Petición a AllTalk
                 response = await asyncio.to_thread(
                     requests.post, 
                     self.alltalk_url, 
@@ -56,24 +60,23 @@ async def worker(self):
                 )
 
                 if response.status_code == 200:
-                    # ESPERA DE SEGURIDAD: Damos 0.5 seg al disco para que "suelte" el archivo
-                    await asyncio.sleep(0.5)
+                    # Pausa de seguridad para que Windows termine de escribir el archivo
+                    await asyncio.sleep(0.6)
                     
                     if os.path.exists(full_path):
                         print(f"🎙️ Kim dice: {texto}")
                         await asyncio.to_thread(playsound, full_path)
                     else:
-                        print(f"⚠️ El archivo se generó pero no se encuentra en: {full_path}")
-                        print("Revisa si AllTalk lo está guardando en su propia carpeta 'outputs'.")
+                        print(f"⚠️ Archivo no encontrado en: {full_path}")
                 else:
                     print(f"❌ Error API AllTalk: {response.status_code}")
 
-                # Limpieza
+                # Limpieza de archivo
                 if os.path.exists(full_path):
                     os.remove(full_path)
                     
             except Exception as e:
-                print(f"❌ Error en el proceso de TTS: {e}")
+                print(f"❌ Error en TTS: {e}")
             
             finally:
                 self.queue.task_done()
