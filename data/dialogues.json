@@ -1,6 +1,6 @@
 {
     "saludos": {
-        "inicio_sistema": "¡Sistema iniciado! Hola {streamer}."
+        "inicio_sistema": "¡Hola {streamer}!."
     },
     "errores": {
         "ia_caida": "¡Uy! Mis orejas se hicieron nudo, ¿puedes repetir?"

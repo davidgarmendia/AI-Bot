@@ -12,6 +12,33 @@ class KimeraProcessor:
             base_url="http://localhost:1234/v1", 
             api_key="lm-studio"
         )
+    async def generate_response(self, usuario, mensaje):
+        # 1. Obtener respuesta de la IA (LM Studio / OpenAI)
+        respuesta = await self.llm.ask(usuario, mensaje) 
+
+        # 2. Aplicar "Filtro de Humanización"
+        respuesta = self.humanizar_texto(respuesta)
+        
+        return respuesta
+
+    def humanizar_texto(self, texto):
+        # Reemplazos rápidos para que suene mejor
+        reemplazos = {
+            " XD": " equis dé",
+            " LOL": " lool",
+            " :)": " ¡jeje!",
+            "www.": " u ve doble, u ve doble, u ve doble punto ",
+            " ID": " i dé"
+        }
+        
+        for original, nuevo in reemplazos.items():
+            texto = texto.replace(original, nuevo)
+            
+        # Forzar una pausa tras el saludo inicial
+        if "¡Hola!" in texto:
+            texto = texto.replace("¡Hola!", "¡Hola!... ")
+            
+        return texto
         
         # Cargamos el prompt del sistema y los términos restringidos
         self.system_prompt = self.loader.system_prompt
