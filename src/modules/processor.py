@@ -8,7 +8,7 @@ class KimeraProcessor:
         self.memory = memory
         
         # Cargamos la URL desde el .env. Si no existe, usa localhost por defecto.
-        self.ia_url = self.loader.get_env("IA_URL", "http://localhost:1234/v1")
+        self.ia_url = self.loader.get_env("IA_URL")
         self.client_ai = OpenAI(base_url=self.ia_url, api_key="lm-studio")
 
         self.system_prompt = "Eres Kim, una asistente de stream divertida, breve y sarcástica. Responde en español, máximo dos frases."
