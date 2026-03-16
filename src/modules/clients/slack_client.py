@@ -35,11 +35,10 @@ class SlackManager:
             text = event.get("text", "")
             thread_ts = event.get("ts")
 
-            # --- ARREGLO 1: OBTENER EL NICK REAL ---
+            # --- OBTENER EL NICK REAL ---
             try:
                 user_info = self.app.client.users_info(user=user_id)
                 profile = user_info['user']['profile']
-                # Buscamos: Apodo de Slack > Nombre Real > ID de usuario
                 user_nick = profile.get('display_name') or profile.get('real_name') or user_id
             except Exception as e:
                 print(f"⚠️ No se pudo obtener el nick: {e}")
@@ -49,22 +48,25 @@ class SlackManager:
 
             async def process_slack_msg():
                 try:
-                    # Limpiamos el texto (quitamos el <@ID_DEL_BOT>)
+                    # Limpiamos el texto
                     clean_text = text.split(">")[-1].strip()
                     if not clean_text:
                         clean_text = "Hola"
 
-                    # Generamos la respuesta con la IA usando el NICK real
+                    # Generamos la respuesta con la IA
                     respuesta = await self.processor.generate_response(user_nick, clean_text)
                     
                     if respuesta:
-                        # 1. Enviar texto a Slack
-                        say(text=respuesta, thread_ts=thread_ts)
+                        # --- NUEVA LÓGICA DE SINCRONIZACIÓN ---
                         
-                        # --- ARREGLO 2: FORZAR VOZ ---
-                        # Añadimos un pequeño log para confirmar que el envío ocurre
-                        print(f"🔊 Enviando respuesta a la cola de voz...")
-                        await self.tts.agregar_a_cola(respuesta)
+                        # 1. Primero procesamos el audio y ESPERAMOS a que termine de sonar
+                        print(f"🔊 Generando audio y esperando reproducción...")
+                        # IMPORTANTE: Usamos 'reproducir_y_esperar' del nuevo TTSEngine
+                        await self.tts.reproducir_y_esperar(respuesta)
+                        
+                        # 2. Una vez que Kim terminó de hablar, enviamos el texto a Slack
+                        print(f"✅ Audio finalizado. Enviando texto a Slack...")
+                        say(text=respuesta, thread_ts=thread_ts)
                 
                 except Exception as e:
                     print(f"❌ Error procesando mensaje de Slack: {e}")
@@ -78,7 +80,5 @@ class SlackManager:
             return
         
         print("🔌 Slack: Conexión activa.")
-        
-        # Usamos connect() para que sea compatible con nuestra "guillotina" de cierre
         handler = SocketModeHandler(self.app, self.app_token)
         await asyncio.to_thread(handler.connect)

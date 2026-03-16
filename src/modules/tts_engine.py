@@ -1,58 +1,84 @@
 import asyncio
-import os
-import time
-import requests
-from playsound import playsound
-from pathlib import Path
+from slack_bolt.app import App
+from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-class TTSEngine:
-    def __init__(self, loader):
+class SlackManager:
+    def __init__(self, loader, processor, tts):
         self.loader = loader
-        self.queue = asyncio.Queue()
+        self.processor = processor
+        self.tts = tts
         
-        # Cargamos directamente sin valores internos (Hardcoded)
-        self.alltalk_url = self.loader.get_env("ALLTALK_URL")
-        self.voice_name = self.loader.get_env("ALLTALK_VOICE")
-        self.alltalk_outputs_path = self.loader.get_env("ALLTALK_OUTPUT_PATH")
-
-    async def agregar_a_cola(self, texto):
-        if texto and len(texto.strip()) > 0:
-            await self.queue.put(texto)
-
-    async def worker(self):
-        # Verificación antes de arrancar
-        if not self.alltalk_url or not self.alltalk_outputs_path:
-            print("❌ TTS: Error de configuración. Revisa tu archivo .env")
+        # Capturamos el bucle de eventos actual
+        try:
+            self.loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self.loop = asyncio.get_event_loop()
+        
+        # Cargamos los tokens del .env
+        self.bot_token = self.loader.get_env("SLACK_BOT_TOKEN")
+        self.app_token = self.loader.get_env("SLACK_APP_TOKEN")
+        
+        if not self.bot_token or not self.app_token:
+            print("⚠️ Slack: Faltan tokens en el .env")
             return
 
-        print(f"🔊 AllTalk Engine activo. Voz: {self.voice_name}")
+        # Inicializamos la App de Slack
+        self.app = App(token=self.bot_token)
+        self._register_events()
+
+    def _register_events(self):
+        """Registro de eventos para escuchar a Slack"""
         
-        while True:
-            texto = await self.queue.get()
-            temp_name = f"kim_voice_{int(time.time())}"
-            full_path = os.path.join(self.alltalk_outputs_path, f"{temp_name}.wav")
-            
+        @self.app.event("app_mention")
+        def handle_mentions(event, say):
+            user_id = event.get("user")
+            text = event.get("text", "")
+            thread_ts = event.get("ts")
+
+            # --- OBTENER EL NICK REAL ---
             try:
-                data = {
-                    "text_input": str(texto),
-                    "voice_speaker": self.voice_name,
-                    "language": "es",
-                    "output_file_name": temp_name,
-                    "use_cache": "false",
-                    "speed": "1.0"
-                }
-
-                response = await asyncio.to_thread(requests.post, self.alltalk_url, data=data, timeout=25)
-
-                if response.status_code == 200:
-                    await asyncio.sleep(0.7)
-                    if os.path.exists(full_path):
-                        print(f"🎙️ Kim dice: {texto}")
-                        await asyncio.to_thread(playsound, full_path)
-                        os.remove(full_path)
-                else:
-                    print(f"❌ Error API AllTalk: {response.status_code}")
+                user_info = self.app.client.users_info(user=user_id)
+                profile = user_info['user']['profile']
+                user_nick = profile.get('display_name') or profile.get('real_name') or user_id
             except Exception as e:
-                print(f"❌ Error en TTS: {e}")
-            finally:
-                self.queue.task_done()
+                print(f"⚠️ No se pudo obtener el nick: {e}")
+                user_nick = "Usuario"
+
+            print(f"💬 [Slack] Mención de {user_nick}") 
+
+            async def process_slack_msg():
+                try:
+                    # Limpiamos el texto
+                    clean_text = text.split(">")[-1].strip()
+                    if not clean_text:
+                        clean_text = "Hola"
+
+                    # Generamos la respuesta con la IA
+                    respuesta = await self.processor.generate_response(user_nick, clean_text)
+                    
+                    if respuesta:
+                        # --- NUEVA LÓGICA DE SINCRONIZACIÓN ---
+                        
+                        # 1. Primero procesamos el audio y ESPERAMOS a que termine de sonar
+                        print(f"🔊 Generando audio y esperando reproducción...")
+                        # IMPORTANTE: Usamos 'reproducir_y_esperar' del nuevo TTSEngine
+                        await self.tts.reproducir_y_esperar(respuesta)
+                        
+                        # 2. Una vez que Kim terminó de hablar, enviamos el texto a Slack
+                        print(f"✅ Audio finalizado. Enviando texto a Slack...")
+                        say(text=respuesta, thread_ts=thread_ts)
+                
+                except Exception as e:
+                    print(f"❌ Error procesando mensaje de Slack: {e}")
+
+            # Ejecución en el loop principal
+            self.loop.call_soon_threadsafe(lambda: asyncio.create_task(process_slack_msg()))
+
+    async def run(self):
+        """Arranca el Socket Mode de Slack"""
+        if not self.app_token: 
+            return
+        
+        print("🔌 Slack: Conexión activa.")
+        handler = SocketModeHandler(self.app, self.app_token)
+        await asyncio.to_thread(handler.connect)
