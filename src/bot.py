@@ -69,7 +69,7 @@ async def main():
         tasks.append(asyncio.create_task(tkm.run()))
 
     # Saludo inicial de Kim
-    await tts.agregar_a_cola(f"Sistema iniciado. Hola {streamer_identity}")
+    await tts.reproducir_y_esperar(f"Sistema iniciado. Hola {streamer_identity}")
     print(f"🚀 {bot_identity.upper()} ESCUCHANDO.\n")
 
     # 4. EJECUCIÓN Y MANEJO DE CIERRE
