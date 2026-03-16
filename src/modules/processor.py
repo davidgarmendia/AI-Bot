@@ -7,12 +7,14 @@ class KimeraProcessor:
         self.loader = loader
         self.memory = memory
         
-        # Cargamos la URL desde el .env. Si no existe, usa localhost por defecto.
+        # Cargamos la URL desde el .env
         self.ia_url = self.loader.get_env("IA_URL")
         self.client_ai = OpenAI(base_url=self.ia_url, api_key="lm-studio")
 
-        self.system_prompt = "Eres Kim, una asistente de stream divertida, breve y sarcástica. Responde en español, máximo dos frases."
-        self.restricted_terms = [] 
+        # CORRECCIÓN: Ahora usa la personalidad definida en personality.json
+        self.system_prompt = self.loader.system_prompt
+        # CORRECCIÓN: Cargamos los términos restringidos desde el loader
+        self.restricted_terms = self.loader.restricted_terms 
 
     def humanizar_texto(self, texto):
         """Mejora la pronunciación del TTS para términos comunes"""
@@ -39,17 +41,15 @@ class KimeraProcessor:
     async def generate_response(self, usuario, mensaje):
         mensaje_limpio = self._aplicar_filtros(mensaje)
         
-        # --- LÓGICA DE MEMORIA SEGURA ---
-        # 1. Recuperamos el contexto (si no hay, devuelve lista vacía [])
+        # 1. Recuperamos el contexto
         contexto_previo = self.memory.get_context(usuario)
         
-        # 2. Iniciamos la lista de mensajes con el System Prompt
+        # 2. Iniciamos la lista de mensajes con el System Prompt actualizado
         mensajes_ia = [{"role": "system", "content": self.system_prompt}]
         
-        # 3. Insertamos el historial SOLO si tiene contenido
-        if contexto_previo and len(contexto_previo) > 0:
+        # 3. Insertamos el historial
+        if contexto_previo:
             for interaccion in contexto_previo:
-                # Verificamos que la estructura del JSON sea correcta
                 if 'user' in interaccion and 'bot' in interaccion:
                     mensajes_ia.append({"role": "user", "content": interaccion['user']})
                     mensajes_ia.append({"role": "assistant", "content": interaccion['bot']})
@@ -58,7 +58,6 @@ class KimeraProcessor:
         mensajes_ia.append({"role": "user", "content": f"{usuario} dice: {mensaje_limpio}"})
 
         try:
-            # Ejecución asíncrona para no bloquear el bot mientras la IA piensa
             loop = asyncio.get_event_loop()
             res = await loop.run_in_executor(None, lambda: self.client_ai.chat.completions.create(
                 model="meta-llama-3-8b-instruct",
@@ -69,18 +68,14 @@ class KimeraProcessor:
             ))
             
             respuesta_ia = res.choices[0].message.content.strip()
-            
-            # Limpieza y humanización de la respuesta
             respuesta_final = self.humanizar_texto(self._aplicar_filtros(respuesta_ia))
             
-            # --- GUARDAR EN MEMORIA ---
-            # Guardamos para que en el siguiente mensaje Kim sepa qué respondió
+            # Guardamos en memoria
             self.memory.save_interaction(usuario, mensaje_limpio, respuesta_final)
             
             print(f"🤖 [Kim Responde]: {respuesta_final}")
             return respuesta_final
 
         except Exception as e:
-            # Si LM Studio está apagado o la URL está mal, Kim avisa con humor
             print(f"❌ Error en KimeraProcessor: {e}")
             return "Mis circuitos se cruzaron, ¿podrías repetirlo?"

@@ -15,9 +15,9 @@ class TTSEngine:
         self.voice_name = self.loader.get_env("ALLTALK_VOICE")
         self.alltalk_outputs_path = self.loader.get_env("ALLTALK_OUTPUT_PATH")
 
-        # Verificación mínima de arranque
+        # Verificación de carpeta de salida
         if not self.alltalk_outputs_path or not os.path.exists(self.alltalk_outputs_path):
-            print(f"❌ Error: Ruta de audio no encontrada.")
+            print(f"❌ Error: Ruta de audio ALLTALK_OUTPUT_PATH no encontrada o no configurada.")
         
         try:
             pygame.mixer.quit()
@@ -29,6 +29,7 @@ class TTSEngine:
             print(f"⚠️ Error Mixer: {e}")
 
     def _corregir_genero(self, texto):
+        """Ajusta palabras para que Kim hable siempre en femenino"""
         reemplazos = {
             r"\bidentificado\b": "identificada", r"\bbienvenido\b": "bienvenida",
             r"\blisto\b": "lista", r"\bcansado\b": "cansada",
@@ -39,7 +40,13 @@ class TTSEngine:
             texto = re.sub(patron, reemplazo, texto, flags=re.IGNORECASE)
         return texto
 
+    async def agregar_a_cola(self, texto):
+        """MÉTODO VITAL: Recibe el texto de los clientes y lo pone en la fila"""
+        if texto and texto.strip():
+            await self.queue.put(texto)
+
     async def reproducir_y_esperar(self, texto):
+        """Procesa la generación de audio y la reproducción con Pygame"""
         if not texto or not texto.strip():
             return
 
@@ -49,12 +56,17 @@ class TTSEngine:
         full_path = base_path / f"{temp_name}.wav"
         
         try:
+            # Petición a AllTalk
             data = {
-                "text_input": str(texto), "voice_speaker": self.voice_name,
-                "language": "es", "output_file_name": temp_name,
-                "use_cache": "false", "speed": "1.0"
+                "text_input": str(texto), 
+                "voice_speaker": self.voice_name,
+                "language": "es", 
+                "output_file_name": temp_name,
+                "use_cache": "false", 
+                "speed": "1.0"
             }
 
+            # Ejecutamos el post en un thread para no bloquear el bucle de eventos
             response = await asyncio.to_thread(
                 requests.post, self.alltalk_url, data=data, timeout=25
             )
@@ -62,14 +74,14 @@ class TTSEngine:
             if response.status_code == 200:
                 archivo_final = None
                 
-                # Búsqueda silenciosa (máximo 4 seg)
+                # Esperar a que AllTalk escriba el archivo en disco (máximo 4 seg)
                 for _ in range(12):
                     await asyncio.sleep(0.3)
                     if full_path.exists():
                         archivo_final = full_path
                         break
                     
-                    # Backup: Sabueso silencioso
+                    # Backup: Buscar el archivo más reciente si el nombre falló
                     wavs = list(base_path.glob("*.wav"))
                     if wavs:
                         reciente = max(wavs, key=os.path.getmtime)
@@ -78,26 +90,34 @@ class TTSEngine:
                             break
                 
                 if archivo_final:
-                    print(f"🎙️ Kim: {texto[:50]}...")
+                    print(f"🎙️ Kim dice: {texto}")
                     pygame.mixer.music.load(str(archivo_final.absolute()))
                     pygame.mixer.music.play()
                     
+                    # Esperar a que termine de hablar
                     while pygame.mixer.music.get_busy():
                         await asyncio.sleep(0.1)
                     
                     pygame.mixer.music.unload()
-                    try: os.remove(str(archivo_final))
-                    except: pass
+                    
+                    # Limpieza silenciosa
+                    try: 
+                        os.remove(str(archivo_final))
+                    except: 
+                        pass
                     return True
             else:
                 print(f"❌ Error AllTalk API: {response.status_code}")
         except Exception as e:
-            print(f"❌ Error TTS: {e}")
+            print(f"❌ Error crítico en TTS: {e}")
         
         return False
 
     async def worker(self):
+        """Bucle infinito que procesa la cola de mensajes uno por uno"""
         while True:
             texto = await self.queue.get()
-            await self.reproducir_y_esperar(texto)
-            self.queue.task_done()
+            try:
+                await self.reproducir_y_esperar(texto)
+            finally:
+                self.queue.task_done()
