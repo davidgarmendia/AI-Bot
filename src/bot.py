@@ -10,9 +10,10 @@ from modules.config_loader import ConfigLoader
 from modules.processor import KimeraProcessor
 from modules.tts_engine import TTSEngine
 from modules.cli_parser import parse_arguments 
-from modules.twitch_client import TwitchManager
-from modules.youtube_client import YouTubeManager
-from modules.tiktok_client import TikTokManager
+from modules.clients.slack_client import SlackManager
+from modules.clients.tiktok_client import TikTokManager
+from modules.clients.twitch_client import TwitchManager
+from modules.clients.youtube_client import YouTubeManager
 
 # --- FUNCIÓN DE APAGADO INSTANTÁNEO ---
 def handle_exit(sig, frame):
@@ -49,7 +50,6 @@ async def main():
     
     # Verifica si vamos a usar Slack
     if args.all or getattr(args, 'slack', False):
-        from modules.slack_client import SlackManager
         sm = SlackManager(loader, processor, tts)
         tasks.append(asyncio.create_task(sm.run()))
 
