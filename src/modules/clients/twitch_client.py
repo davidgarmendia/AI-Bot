@@ -5,7 +5,7 @@ class TwitchManager(commands.Bot):
     def __init__(self, loader, processor, tts):
         self.loader = loader
         
-        # Cargamos los datos de forma privada
+        # Cargamos los datos de forma segura
         token = self.loader.get_env("TWITCH_TOKEN").strip()
         channel = self.loader.get_env("TWITCH_CHANNEL").strip()
         client_id = self.loader.get_env("TWITCH_CLIENT_ID").strip()
@@ -17,7 +17,6 @@ class TwitchManager(commands.Bot):
         self.processor = processor
         self.tts = tts
 
-        # Inicializamos sin guardar los tokens en self (más seguro)
         super().__init__(
             token=token,
             client_id=client_id,
@@ -28,39 +27,45 @@ class TwitchManager(commands.Bot):
         )
 
     async def event_ready(self):
-        # Mensaje limpio de seguridad
         print(f"==================================================")
         print(f"📡 Twitch: CONEXIÓN SEGURA ESTABLECIDA")
         print(f"📺 Canal activo: {self.channel}")
         print(f"==================================================")
 
     async def event_error(self, error, data=None):
-        """Maneja errores sin revelar qué dato falló específicamente"""
-        print(f"⚠️ Twitch Error: La conexión fue rechazada. Revisa tu archivo .env.")
+        print(f"⚠️ Twitch Error: La conexión fue rechazada o falló. Revisa tu archivo .env.")
 
     async def event_message(self, data):
         # Ignorar mensajes del propio bot
         if data.author is None or data.author.name.lower() == self.channel.lower():
             return
 
-        usuario = data.author.name
+        # --- ARREGLO DE NICK (Display Name) ---
+        # data.author.display_name mantiene las mayúsculas (ej: "Klumsy_TV" en vez de "klumsy_tv")
+        usuario = data.author.display_name or data.author.name
         contenido = data.content
         
-        # Solo imprimimos el chat
-        print(f"💬 [Chat] {usuario}: {contenido}")
+        # Imprimimos el log con el Nick real
+        print(f"💬 [Twitch] {usuario}: {contenido}")
 
-        try:
-            # Procesar con timeout para evitar bloqueos
-            respuesta = await asyncio.wait_for(
-                self.processor.generate_response(usuario, contenido), 
-                timeout=8.0
-            )
-            
-            if respuesta:
-                await self.tts.agregar_a_cola(respuesta)
+        # Filtro de activación (Solo responde si mencionan a Kim o Kimera)
+        trigger_words = ["kim", "kimera"]
+        if any(word in contenido.lower() for word in trigger_words):
+            try:
+                # Procesar con timeout
+                respuesta = await asyncio.wait_for(
+                    self.processor.generate_response(usuario, contenido), 
+                    timeout=8.0
+                )
                 
-        except Exception:
-            # Error genérico para no ensuciar la consola en vivo
-            print(f"❌ Kim tuvo un problema procesando el mensaje de {usuario}")
+                if respuesta:
+                    # Log de confirmación de voz
+                    print(f"🔊 [Twitch] Enviando respuesta de {usuario} a voz...")
+                    await self.tts.agregar_a_cola(respuesta)
+                    
+            except asyncio.TimeoutError:
+                print(f"⏳ [Twitch] Tiempo de espera agotado para la respuesta a {usuario}")
+            except Exception as e:
+                print(f"❌ Error procesando mensaje de Twitch: {e}")
 
         await self.handle_commands(data)

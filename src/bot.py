@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import os
+import signal
 
 # Agrega la carpeta actual al sistema para que Python encuentre los módulos
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -13,6 +14,13 @@ from modules.twitch_client import TwitchManager
 from modules.youtube_client import YouTubeManager
 from modules.tiktok_client import TikTokManager
 
+# --- FUNCIÓN DE APAGADO INSTANTÁNEO ---
+def handle_exit(sig, frame):
+    """Mata el proceso inmediatamente al recibir Ctrl+C."""
+    # Usamos os._exit(0) para ignorar los hilos bloqueados de Slack
+    print("\n👋 Kim se ha ido a dormir instantáneamente.")
+    os._exit(0)
+
 async def main():
     args = parse_arguments()
     
@@ -20,7 +28,8 @@ async def main():
     try:
         loader = ConfigLoader()
     except Exception as e:
-        print(f"❌ Error crítico: {e}"); return
+        print(f"❌ Error crítico: {e}")
+        return
 
     bot_identity = loader.get_env("BOT_NAME", "Kimera")
     streamer_identity = loader.get_env("STREAMER_NAME", "Klumsy")
@@ -68,27 +77,24 @@ async def main():
         # Aquí el bot se queda corriendo "para siempre"
         await asyncio.gather(*tasks)
     except (asyncio.CancelledError, KeyboardInterrupt):
-        # Si presionas Ctrl+C, entramos aquí
-        print(f"\n🛑 {bot_identity.upper()}: Detectada señal de apagado...")
+        # Si por alguna razón asyncio detecta el cierre antes que signal
+        handle_exit(None, None)
     finally:
-        # Cerramos todas las tareas activas para no dejar procesos colgados
-        print("🧹 Limpiando procesos activos...")
+        # Último recurso de limpieza
         for task in tasks: 
             task.cancel()
-        # Esperamos un milisegundo para que las tareas se enteren del cierre
-        await asyncio.sleep(0.1) 
+        os._exit(0)
 
 if __name__ == "__main__":
-    # Ajuste para que asyncio funcione bien en Windows (evita errores de cierre)
+    # REGISTRO DE SEÑAL DE CIERRE (Guillotina)
+    # SIGINT es la señal que envía Control + C
+    signal.signal(signal.SIGINT, handle_exit)
+
+    # Ajuste para que asyncio funcione bien en Windows
     if sys.platform == 'win32':
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        # Esto evita que Windows muestre un error feo al cerrar con Ctrl+C
-        print("\n👋 Kim se ha ido a dormir correctamente.")
-        try:
-            sys.exit(0)
-        except SystemExit:
-            os._exit(0) # Salida forzosa si Slack sigue rebelde
+        handle_exit(None, None)

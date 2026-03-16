@@ -8,7 +8,7 @@ class TikTokManager:
         self.processor = processor
         self.tts = tts
         
-        # Inicializamos el cliente (sin el @ si ya lo manejas en el env)
+        # Inicializamos el cliente
         self.client = TikTokLiveClient(unique_id=self.username)
 
         # Registramos los eventos
@@ -19,27 +19,37 @@ class TikTokManager:
         print(f"📡 TikTok: Conectado al live de {self.username}")
 
     async def on_comment(self, event: CommentEvent):
-        usuario = event.user.nickname
+        # --- ARREGLO DE NICK ---
+        # event.user.nickname es el nombre "bonito" (ej: Juan Pérez)
+        # event.user.unique_id es el @ (ej: juanperez123)
+        usuario = event.user.nickname or event.user.unique_id
         mensaje = event.comment
         
+        # Filtro de activación
         trigger_words = ["kim", "kimera"]
         if any(word in mensaje.lower() for word in trigger_words):
             print(f"💬 [TikTok] {usuario}: {mensaje}")
             
             try:
+                # Generamos respuesta pasando el Nick Real
                 respuesta = await self.processor.generate_response(usuario, mensaje)
+                
                 if respuesta:
+                    # Log para verificar el envío a voz
+                    print(f"🔊 [TikTok] Enviando respuesta de {usuario} a voz...")
                     await self.tts.agregar_a_cola(respuesta)
+                    
             except Exception as e:
                 print(f"❌ Error en procesamiento TikTok: {e}")
 
     async def run(self):
         """Método unificado para el arranque"""
         if not self.username:
-            print("⚠️ TikTok: TIKTOK_NICKNAME no definido.")
+            print("⚠️ TikTok: TIKTOK_NICKNAME no definido en el .env")
             return
         
         try:
+            # Iniciamos sin bloquear para que otros módulos (como AllTalk) sigan corriendo
             await self.client.start()
         except Exception as e:
             print(f"❌ Error al conectar con TikTok: {e}")
